@@ -1,7 +1,7 @@
 import logging
 import plotly.graph_objs as go
 import plotly.io as pio
-from quart import Blueprint, render_template, jsonify
+from quart import Blueprint, render_template, jsonify, request
 from datetime import datetime, timedelta
 from utils.weather_data import fetch_QuestWeatherStation_data, generate_timestamps
 from database import fetch_all_rows
@@ -13,18 +13,44 @@ bp = Blueprint('index', __name__)
 logger = logging.getLogger(__name__)
 
 html_template = "index.html"  # Use template file
+lifetime=False 
+
+
+@bp.route('/get_lifetime',methods=['GET'])
+async def get_lifetime():
+    return jsonify(lifetime=lifetime)
+
+
+@bp.route('/update_lifetime',methods=['POST'])
+async def update_lifetime():
+    global lifetime
+    data = await request.get_json()
+    lifetime = data.get('lifetime')
+    return jsonify(success=True, lifetime=lifetime)
+
+
+
+
+
 
 @bp.route('/')
 async def index():
+    global lifetime, days_ago_str
     try:
         traces_celsius = []
         traces_fahrenheit = []
         traces_windspeed = []
 
-        # Calculate the timestamp for 21 days ago
+        # Calculate the timestamp for 21 days ago or lifetime
         days_ago = datetime.now() - timedelta(days=21)
         days_ago_str = days_ago.strftime('%Y-%m-%d %H:%M:%S')
+        logger.debug(f"lifetime= {lifetime}")
+        if lifetime:
+            days_ago_str='2024-06-01 00:00:00' 
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        logger.debug(f"datetime.now = {now}")
+        logger.debug(f"days_ago_str = {days_ago_str}")
 
         # Loop through sensors Sensor1 to Sensor30
         for i in range(1, 31):
@@ -33,7 +59,7 @@ async def index():
             SELECT t1.timestamp, t1.temperature, t2.owners_first_name
             FROM sensor_data t1
             INNER JOIN latest_sensor_meta_data t2 ON t1.sensorid = t2.sensor_name
-            WHERE t1.sensorid = '{sensorid}' AND t1.timestamp >= '{days_ago_str}'
+            WHERE t1.sensorid = '{sensorid}' AND t1.timestamp >= '{days_ago_str}'  
             ORDER BY t1.timestamp ASC;
             """
             rows = fetch_all_rows(query)
@@ -70,7 +96,7 @@ async def index():
         # Fetch Quest Weather Station data asynchronously
         async with aiohttp.ClientSession() as session:
             tasks = []
-            for start_timestamp, end_timestamp in generate_timestamps(days_ago, datetime.now()):
+            for start_timestamp, end_timestamp in generate_timestamps(days_ago , datetime.now()):
                 tasks.append(fetch_QuestWeatherStation_data(session, start_timestamp, end_timestamp))
 
             responses = await asyncio.gather(*tasks)
